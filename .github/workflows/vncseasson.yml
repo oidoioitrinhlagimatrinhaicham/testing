@@ -20,7 +20,10 @@ jobs:
         sudo apt update
         sudo apt install -y xfce4 xfce4-goodies tightvncserver websockify gnome-terminal wget
         
-        # CHỖ SỬA: ĐẶT LẠI MẬT KHẨU CỦA BẠN!
+        # CHỖ SỬA LỖI: Tạo thư mục .vnc trước khi tạo file passwd
+        mkdir -p ~/.vnc 
+        
+        # ĐẶT LẠI MẬT KHẨU CỦA BẠN!
         VNC_PASS="YourNewSecurePassword123" 
         echo "$VNC_PASS" | vncpasswd -f > ~/.vnc/passwd
         chmod 600 ~/.vnc/passwd
@@ -32,6 +35,7 @@ jobs:
         startxfce4 &
         EOF
         chmod +x ~/.vnc/xstartup
+        
         vncserver :1 -geometry 1920x1080 -depth 24 
         
         # Khởi động noVNC Proxy
