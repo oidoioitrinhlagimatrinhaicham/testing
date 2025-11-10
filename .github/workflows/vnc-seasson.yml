@@ -1,0 +1,82 @@
+name: Free VNC/RDP (Full HD) + Auto-Restart
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Chạy mỗi 5 giờ để khởi động lại trước khi phiên 6 giờ kết thúc.
+    - cron: '0 */5 * * *' 
+
+jobs:
+  run-vnc-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # Giới hạn 5 giờ 50 phút
+
+    steps:
+    - name: ⬇️ Khôi phục Dữ liệu Quan trọng (Persistence)
+      uses: actions/download-artifact@v4
+      with:
+        name: persistent-data
+        path: ${{ github.workspace }}/data
+        
+    - name: ⚙️ Cài đặt Môi trường Desktop và VNC (Full HD 1920x1080)
+      run: |
+        # Tạo thư mục dữ liệu nếu chưa có
+        mkdir -p ${{ github.workspace }}/data
+        
+        # Cập nhật và cài đặt các gói cần thiết
+        sudo apt update
+        sudo apt install -y xfce4 xfce4-goodies tightvncserver websockify gnome-terminal wget
+        
+        # Thiết lập Mật khẩu VNC (BẮT BUỘC PHẢI THAY ĐỔI MẬT KHẨU NÀY!)
+        VNC_PASS="depchai" 
+        echo "$VNC_PASS" | vncpasswd -f > ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
+        
+        # Thiết lập file khởi động XFCE4
+        cat << EOF > ~/.vnc/xstartup
+        #!/bin/bash
+        xrdb $HOME/.Xresources
+        startxfce4 &
+        EOF
+        chmod +x ~/.vnc/xstartup
+        
+        # Khởi động VNC Server với độ phân giải Full HD (1920x1080)
+        vncserver :1 -geometry 1920x1080 -depth 24 
+        
+        # Khởi động websockify (noVNC Proxy) trên cổng 6080
+        websockify 6080 localhost:5901 --web /usr/share/novnc/ &
+
+    - name: ☁️ Tải và Cấu hình Cloudflare Tunnel (cloudflared)
+      run: |
+        wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+        chmod +x cloudflared-linux-amd64
+        sudo mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
+
+    - name: 🚀 Chạy Cloudflare Tunnel và Tạo Link Truy Cập
+      env:
+        TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        TUNNEL_NAME: ${{ secrets.TUNNEL_NAME }} # Lấy tên tunnel từ GitHub Secret
+        CF_HOSTNAME: vnc.depchai5.qzz.io # Ví dụ: THAY THẾ bằng Hostname BẠN ĐÃ CẤU HÌNH!
+        VNC_URL: https://${{ env.CF_HOSTNAME }}/vnc_auto.html
+      run: |
+        # Chạy Cloudflare Tunnel
+        /usr/local/bin/cloudflared tunnel run --token $TUNNEL_TOKEN ${{ env.TUNNEL_NAME }} &
+        
+        # Ghi URL truy cập ra GitHub Workflow Summary
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "## 🔗 Thông Tin Kết Nối noVNC (FULL HD)" >> $GITHUB_STEP_SUMMARY
+        echo "- **URL noVNC:** [Truy cập tại đây](${{ env.VNC_URL }})" >> $GITHUB_STEP_SUMMARY
+        echo "- **Mật Khẩu VNC:** YourSecurePassword123" >> $GITHUB_STEP_SUMMARY
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        
+        # Giữ job chạy trong thời gian dài.
+        echo "Duy trì phiên làm việc... (Tự động khởi động lại sau 5 giờ)"
+        sleep 21000 
+        
+    - name: ⬆️ Lưu Dữ liệu quan trọng (Persistence)
+      if: always() # Luôn chạy bước này dù job thất bại
+      uses: actions/upload-artifact@v4
+      with:
+        name: persistent-data
+        path: ${{ github.workspace }}/data/
+        retention-days: 1 # Giữ Artifact trong 1 ngày
