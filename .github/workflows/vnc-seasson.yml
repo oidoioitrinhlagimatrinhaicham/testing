@@ -1,38 +1,41 @@
-name: Final VNC/RDP (Full HD) + Auto-Restart
+name: Final VNC/RDP (Full HD) + Auto-Restart (NO PERSISTENCE)
 
 on:
   workflow_dispatch:
   schedule:
-    # Chạy mỗi 5 giờ để tự động khởi động lại
+    # Tự động khởi động lại mỗi 5 giờ
     - cron: '0 */5 * * *' 
 
 jobs:
   run-vnc-session:
     runs-on: ubuntu-latest
-    timeout-minutes: 350 
+    timeout-minutes: 350 # Giới hạn 5 giờ 50 phút
 
     steps:
-    - name: ⬇️ Khôi phục Dữ liệu Quan trọng (Persistence)
-      # CHỖ SỬA LỖI: Bỏ qua lỗi nếu Artifact chưa tồn tại (lần chạy đầu tiên)
-      uses: actions/download-artifact@v4
-      id: download-data
-      continue-on-error: true # <-- Thêm dòng này để Job không dừng lại khi không tìm thấy Artifact
-      with:
-        name: persistent-data
-        path: ${{ github.workspace }}/data
-        
+    
+    # Bước Khôi phục Dữ liệu đã BỊ XÓA (⬇️)
+
     - name: ⚙️ Cài đặt Môi trường Desktop và VNC (Full HD 1920x1080)
       run: |
-        mkdir -p ${{ github.workspace }}/data
+        # Không cần lệnh mkdir -p ${{ github.workspace }}/data nữa
         sudo apt update
         sudo apt install -y xfce4 xfce4-goodies tightvncserver websockify gnome-terminal wget
         
-        # CHỖ SỬA MẬT KHẨU: ĐẶT LẠI MẬT KHẨU NÀY
+        # CHỖ SỬA: ĐẶT LẠI MẬT KHẨU NÀY!
         VNC_PASS="YourNewSecurePassword123" 
         echo "$VNC_PASS" | vncpasswd -f > ~/.vnc/passwd
         chmod 600 ~/.vnc/passwd
         
+        # Khởi động VNC Full HD
+        cat << EOF > ~/.vnc/xstartup
+        #!/bin/bash
+        xrdb $HOME/.Xresources
+        startxfce4 &
+        EOF
+        chmod +x ~/.vnc/xstartup
         vncserver :1 -geometry 1920x1080 -depth 24 
+        
+        # Khởi động noVNC Proxy
         websockify 6080 localhost:5901 --web /usr/share/novnc/ &
 
     - name: ☁️ Tải và Cấu hình Cloudflare Tunnel (cloudflared)
@@ -46,8 +49,7 @@ jobs:
         # Lấy các giá trị từ GitHub Secrets
         TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
         TUNNEL_NAME: ${{ secrets.TUNNEL_NAME }} 
-        # Giá trị Hostname của bạn
-        CF_HOSTNAME: ${{ secrets.CF_HOSTNAME }}
+        CF_HOSTNAME: ${{ secrets.CF_HOSTNAME }} # Hostname đã cấu hình trên Cloudflare
         VNC_URL: https://${{ secrets.CF_HOSTNAME }}/vnc_auto.html
       run: |
         /usr/local/bin/cloudflared tunnel run --token $TUNNEL_TOKEN ${{ env.TUNNEL_NAME }} &
@@ -60,10 +62,6 @@ jobs:
         # Duy trì kết nối
         sleep 21000 
         
-    - name: ⬆️ Lưu Dữ liệu quan trọng (Persistence)
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: persistent-data
-        path: ${{ github.workspace }}/data/
-        retention-days: 1
+    # Bước Lưu Dữ liệu đã BỊ XÓA (⬆️)
+
+    # Bước Complete job sẽ tự động chạy sau khi sleep kết thúc
